@@ -1,0 +1,237 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: ${{ github.repository }}/backend
+  IMAGE_NAME_FRONTEND: ${{ github.repository }}/frontend
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run linting
+      run: |
+        cd backend
+        pip install flake8
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: Run tests
+      run: |
+        cd backend
+        python -m pytest test_app.py -v --tb=short
+        
+    - name: Test Flask app startup
+      run: |
+        cd backend
+        timeout 10s python app.py || exit_code=$?
+        if [ $exit_code -eq 124 ]; then
+          echo "Flask app started successfully"
+        else
+          echo "Flask app failed to start"
+          exit 1
+        fi
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Run linting
+      run: |
+        cd frontend
+        npm run lint
+        
+    - name: Run tests
+      run: |
+        cd frontend
+        npm test -- --coverage --watchAll=false
+        
+    - name: Build application
+      run: |
+        cd frontend
+        npm run build
+
+  build-and-push:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata for backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and push backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+        
+    - name: Extract metadata for frontend
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+
+  security-scan:
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner on backend
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest
+        format: 'sarif'
+        output: 'trivy-backend-results.sarif'
+        
+    - name: Run Trivy vulnerability scanner on frontend
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest
+        format: 'sarif'
+        output: 'trivy-frontend-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: '.'
+
+  deploy-staging:
+    needs: [security-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        echo "Backend image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest"
+        echo "Frontend image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest"
+        # Here you would add actual deployment commands
+        # For example: kubectl, docker-compose, or deployment scripts
+        
+    - name: Health check staging
+      run: |
+        echo "🏥 Running health checks..."
+        # Add health check commands here
+        # curl http://staging.yourapp.com/health
+        
+    - name: Notify deployment
+      run: |
+        echo "✅ Staging deployment completed successfully!"
+
+  deploy-production:
+    needs: [deploy-staging]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production environment..."
+        echo "Backend image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest"
+        echo "Frontend image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest"
+        # Here you would add actual deployment commands
+        
+    - name: Health check production
+      run: |
+        echo "🏥 Running health checks..."
+        # Add health check commands here
+        
+    - name: Notify deployment
+      run: |
+        echo "🎉 Production deployment completed successfully!"

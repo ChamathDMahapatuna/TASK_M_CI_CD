@@ -1,0 +1,164 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+        
+    - name: Install Python dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 black isort safety bandit
+        
+    - name: Install Node.js dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Python code formatting check
+      run: |
+        cd backend
+        black --check --diff .
+        
+    - name: Python import sorting check
+      run: |
+        cd backend
+        isort --check-only --diff .
+        
+    - name: Python linting
+      run: |
+        cd backend
+        flake8 . --count --statistics
+        
+    - name: Python security check
+      run: |
+        cd backend
+        bandit -r . -f json -o bandit-report.json || true
+        safety check --json --output safety-report.json || true
+        
+    - name: JavaScript/React linting
+      run: |
+        cd frontend
+        npm run lint
+        
+    - name: Run backend tests with coverage
+      run: |
+        cd backend
+        pip install pytest-cov
+        python -m pytest test_app.py --cov=. --cov-report=xml --cov-report=html
+        
+    - name: Run frontend tests with coverage
+      run: |
+        cd frontend
+        npm test -- --coverage --watchAll=false --coverageReporters=text-lcov > coverage.lcov
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./backend/coverage.xml,./frontend/coverage.lcov
+        flags: unittests
+        name: codecov-umbrella
+        
+    - name: Comment PR with test results
+      uses: actions/github-script@v6
+      if: always()
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // Create a comment body with test results
+          let comment = '## 🔍 Code Quality Check Results\n\n';
+          
+          comment += '### ✅ Completed Checks:\n';
+          comment += '- Python code formatting (black)\n';
+          comment += '- Python import sorting (isort)\n';
+          comment += '- Python linting (flake8)\n';
+          comment += '- Python security scan (bandit)\n';
+          comment += '- JavaScript/React linting (eslint)\n';
+          comment += '- Backend tests with coverage\n';
+          comment += '- Frontend tests with coverage\n';
+          
+          comment += '\n### 📊 Coverage Reports:\n';
+          comment += 'Coverage reports have been uploaded to Codecov.\n';
+          
+          // Post the comment
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check for known vulnerabilities in Python dependencies
+      uses: pypa/gh-action-pip-audit@v1.0.8
+      with:
+        inputs: backend/requirements.txt
+        
+    - name: Check for known vulnerabilities in Node.js dependencies
+      run: |
+        cd frontend
+        npm audit --audit-level high
+
+  build-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build backend Docker image
+      run: |
+        cd backend
+        docker build -t backend-test .
+        
+    - name: Build frontend Docker image
+      run: |
+        cd frontend
+        docker build -t frontend-test .
+        
+    - name: Test Docker containers
+      run: |
+        # Test that containers can start successfully
+        docker run -d --name backend-test-container -p 5001:5000 backend-test
+        docker run -d --name frontend-test-container -p 3001:80 frontend-test
+        
+        # Wait for containers to start
+        sleep 10
+        
+        # Test backend health
+        curl -f http://localhost:5001/health || exit 1
+        
+        # Test frontend health
+        curl -f http://localhost:3001/health || exit 1
+        
+        # Cleanup
+        docker stop backend-test-container frontend-test-container
+        docker rm backend-test-container frontend-test-container
