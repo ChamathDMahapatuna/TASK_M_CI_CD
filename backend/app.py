@@ -23,7 +23,11 @@ if not tasks:
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint for monitoring"""
-    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+    return jsonify({
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.2"
+    })
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
