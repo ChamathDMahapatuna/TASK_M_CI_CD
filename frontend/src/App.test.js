@@ -1,11 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import App from './App';
 
 // Mock axios
 jest.mock('axios', () => ({
-  get: jest.fn(() => Promise.resolve({ data: { tasks: [] } })),
+  get: jest.fn(() => Promise.resolve({ data: { tasks: [], total: 0 } })),
   post: jest.fn(() => Promise.resolve({ data: {} })),
   put: jest.fn(() => Promise.resolve({ data: {} })),
   delete: jest.fn(() => Promise.resolve({ data: {} })),
@@ -13,8 +13,10 @@ jest.mock('axios', () => ({
 }));
 
 describe('App Component', () => {
-  test('renders task manager header', () => {
+  test('renders task manager header after loading', async () => {
     render(<App />);
-    expect(screen.getByText('Task Manager')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Task Manager')).toBeInTheDocument();
+    });
   });
 });
