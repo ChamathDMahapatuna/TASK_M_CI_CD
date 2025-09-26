@@ -23,7 +23,11 @@ function App() {
       setError('');
     } catch (err) {
       setError('Failed to fetch tasks. Make sure the backend server is running.');
-      console.error('Error fetching tasks:', err);
+      // Only log in development mode
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('Error fetching tasks:', err);
+      }
     } finally {
       setLoading(false);
     }
@@ -40,7 +44,10 @@ function App() {
       setError('');
     } catch (err) {
       setError('Failed to create task');
-      console.error('Error creating task:', err);
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('Error creating task:', err);
+      }
     }
   };
 
@@ -52,7 +59,10 @@ function App() {
       setError('');
     } catch (err) {
       setError('Failed to update task');
-      console.error('Error updating task:', err);
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('Error updating task:', err);
+      }
     }
   };
 
@@ -63,7 +73,10 @@ function App() {
       setError('');
     } catch (err) {
       setError('Failed to delete task');
-      console.error('Error deleting task:', err);
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('Error deleting task:', err);
+      }
     }
   };
 
@@ -74,7 +87,10 @@ function App() {
       setError('');
     } catch (err) {
       setError('Failed to toggle task');
-      console.error('Error toggling task:', err);
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('Error toggling task:', err);
+      }
     }
   };
 

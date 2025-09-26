@@ -15,15 +15,20 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
+    "test": "react-scripts test --env=jsdom",
+    "test:ci": "CI=true react-scripts test --env=jsdom --coverage --watchAll=false",
     "eject": "react-scripts eject",
-    "lint": "eslint src/ --ext .js,.jsx,.ts,.tsx"
+    "lint": "eslint src/ --ext .js,.jsx,.ts,.tsx --max-warnings=0"
   },
   "eslintConfig": {
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "rules": {
+      "no-console": "warn",
+      "no-unused-vars": "error"
+    }
   },
   "browserslist": {
     "production": [
