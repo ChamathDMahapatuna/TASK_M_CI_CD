@@ -37,8 +37,8 @@ def test_create_task(client):
         'description': 'This is a test task'
     }
     response = client.post('/api/tasks',
-                          data=json.dumps(new_task),
-                          content_type='application/json')
+                           data=json.dumps(new_task),
+                           content_type='application/json')
     assert response.status_code == 201
     data = json.loads(response.data)
     assert data['title'] == new_task['title']
@@ -53,8 +53,8 @@ def test_create_task_no_title(client):
         'description': 'This task has no title'
     }
     response = client.post('/api/tasks',
-                          data=json.dumps(new_task),
-                          content_type='application/json')
+                           data=json.dumps(new_task),
+                           content_type='application/json')
     assert response.status_code == 400
     data = json.loads(response.data)
     assert 'error' in data
