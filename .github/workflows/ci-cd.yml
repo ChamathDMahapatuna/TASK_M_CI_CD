@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_BACKEND: ${{ github.repository }}/backend
-  IMAGE_NAME_FRONTEND: ${{ github.repository }}/frontend
+  IMAGE_NAME_BACKEND: ${{ github.repository_owner }}/task-manager-backend
+  IMAGE_NAME_FRONTEND: ${{ github.repository_owner }}/task-manager-frontend
 
 jobs:
   test-backend:
@@ -156,6 +156,10 @@ jobs:
     needs: [build-and-push]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     
     steps:
     - name: Checkout code
@@ -168,7 +172,7 @@ jobs:
         format: 'sarif'
         output: 'trivy-backend-results.sarif'
         
-    - name: Run Trivy vulnerability scanner on frontend
+    - name: Run Trivy vulnerability scanner on frontend  
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest
@@ -176,10 +180,16 @@ jobs:
         output: 'trivy-frontend-results.sarif'
         
     - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
-        sarif_file: '.'
+        sarif_file: 'trivy-backend-results.sarif'
+        
+    - name: Upload Frontend Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-frontend-results.sarif'
 
   deploy-staging:
     needs: [security-scan]
